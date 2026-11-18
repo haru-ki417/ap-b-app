@@ -45,6 +45,7 @@ with sync_playwright() as p:
 
     # セキュリティの1題目：選択・記述・自己採点
     page.click(".pitem >> nth=0")
+    page.locator("#pane-q .grp").first.wait_for()  # 一覧から問題に切り替わるのを待つ（# の変化は非同期）
     check("指摘1" in page.inner_text("#pane-q"), "問題タブに問題文が出る")
     check(page.locator("#pane-q .grp").count() >= 2, "解答群が問題文に差し込まれる")
     page.click(".tab[data-t=s]")
@@ -78,6 +79,7 @@ with sync_playwright() as p:
     page.reload()
     check(page.locator(".pitem").count() == total, "オフラインでも開ける")
     page.click(".pitem >> nth=10")
+    page.locator("#pane-q h4").first.wait_for()
     page.click(".tab[data-t=s]")
     check(page.locator(".row").count() > 0, "オフラインでも解答用紙が出る")
 
