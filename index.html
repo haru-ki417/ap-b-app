@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>応用情報 科目B スマホ演習</title>
+<meta name="description" content="応用情報技術者試験 科目B（旧午後）の記述・穴埋め問題をスマホで解けるオフライン対応アプリ">
+<meta name="theme-color" content="#2c5bd6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="応用情報B">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="home" class="wrap">
+  <h1>応用情報 科目B スマホ演習</h1>
+  <p class="sub">旧「午後」形式の記述・穴埋め問題。1問15〜20分を目安に、すきま時間で1問ずつ。</p>
+  <details class="card">
+    <summary>科目Bの構成と解き方</summary>
+    <ul>
+      <li>試験時間150分。<b>問1（情報セキュリティ）は必須</b>、問2〜11から<b>4問を選択</b>して計5問。1問あたり約30分。</li>
+      <li>科目A・科目Bそれぞれ60点以上で合格。</li>
+      <li>選択する分野は事前に決めておく。本番で難しい問題に当たったときのため、予備に1〜2分野多く練習しておくと安心。</li>
+      <li>記述は「問われた形」で答える（理由なら「〜から／〜ため」で終える）。</li>
+      <li>字数は上限の7〜8割以上を目安に。本文中の言葉を使うと採点者に伝わりやすい。</li>
+      <li>解答群から選ぶ設問・計算問題を先に片付け、記述は後回しにすると時間を守りやすい。</li>
+    </ul>
+  </details>
+  <div class="chips" id="chips"></div>
+  <div class="plist" id="plist"></div>
+  <div class="card sub" id="summary"></div>
+</div>
+
+<div id="view" class="hidden">
+  <div class="top"><div class="topin">
+    <div class="toprow">
+      <button class="back" id="backBtn">‹ 一覧</button>
+      <div class="ttl" id="vttl"></div>
+      <div class="timer" id="timer"></div>
+    </div>
+    <div class="tabs">
+      <button class="tab" data-t="q">問題</button>
+      <button class="tab" data-t="s">解答用紙</button>
+      <button class="tab" data-t="e">解説</button>
+    </div>
+  </div></div>
+  <div class="wrap">
+    <div id="pane-q"></div>
+    <div id="pane-s"></div>
+    <div id="pane-e"></div>
+  </div>
+</div>
+
+<script src="js/problems.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
