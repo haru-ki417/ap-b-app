@@ -14,10 +14,13 @@ let failed = 0;
 const ok = (cond, msg) => { if (!cond) { failed++; console.error("  NG: " + msg); } };
 const section = name => console.log("■ " + name);
 
+// index.html と同じ順にデータのスクリプトを読み込む（app.js は画面のコードなので文法だけ確かめる）
+const scripts = [...read("index.html").matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
 const ctx = vm.createContext({});
-vm.runInContext(read("js/problems.js") + "\n;globalThis.__ = {FIELDS, PROBLEMS};", ctx);
-const { FIELDS, PROBLEMS } = ctx.__;
-new vm.Script(read("js/app.js")); // 画面のコードは文法だけ確かめる
+vm.runInContext(scripts.filter(f => f !== "js/app.js").map(read).join("\n") +
+  "\n;globalThis.__ = {FIELDS, PROBLEMS, PAST, CARDS, CARD_GROUPS, pastUrl};", ctx);
+const { FIELDS, PROBLEMS, PAST, CARDS, CARD_GROUPS, pastUrl } = ctx.__;
+new vm.Script(read("js/app.js"));
 
 const len = s => [...s.replace(/\s/g, "")].length;
 
@@ -52,7 +55,14 @@ for (const p of PROBLEMS) {
   }
 }
 for (const f of Object.keys(FIELDS)) ok(PROBLEMS.some(p => p.f === f), `分野 ${f} の問題がない`);
-console.log(`  解答欄 ${items} 個`);
+for (const p of PROBLEMS) ok(p.level === undefined || p.level === "full", `${p.id}: level は full か なし`);
+console.log(`  解答欄 ${items} 個（うち本番レベル ${PROBLEMS.filter(p => p.level === "full").length} 題）`);
+
+section(`過去問 ${PAST.length} 回・要点カード ${CARDS.length} 枚`);
+ok(new Set(PAST.map(s => s.id)).size === PAST.length, "過去問の id が重複している");
+for (const s of PAST) for (const k of ["qs", "ans", "cmnt"]) ok(/^https:\/\/www\.ipa\.go\.jp\/shiken\/mondai-kaiotu\/[\w-]+-att\/20\d\dr0\d[aho]_ap_pm_(qs|ans|cmnt)\.pdf$/.test(pastUrl(s, k)), `過去問 ${s.name} の URL の形がおかしい: ${pastUrl(s, k)}`);
+for (const c of CARDS) ok((FIELDS[c.f] || CARD_GROUPS[c.f]) && c.q.trim() && c.a.trim(), `カード「${c.q.slice(0, 15)}」の分野か内容がない`);
+ok(new Set(CARDS.map(c => c.q)).size === CARDS.length, "要点カードの問いが重複している");
 
 // ---------- 計算・トレースの再計算 ----------
 section("計算・トレースの問題を解き直す");
@@ -214,6 +224,122 @@ const vel = (18 + 22 + 20) / 3;
 same("k2", "a", vel);
 same("k2", "b", Math.ceil(120 / vel));
 same("k2", "c", Math.ceil(120 / vel) * 2);
+
+// ---------- 本番レベルの問題 ----------
+// pf1 最小ヒープ
+function heapPush(h, x) { h.push(x); let i = h.length - 1, n = 0; while (i > 1 && h[Math.floor(i / 2)] > h[i]) { [h[i], h[Math.floor(i / 2)]] = [h[Math.floor(i / 2)], h[i]]; i = Math.floor(i / 2); n++; } return n; }
+function heapPop(h) {
+  const top = h[1]; h[1] = h[h.length - 1]; h.pop(); const size = h.length - 1; let i = 1;
+  while (2 * i <= size) { let c = 2 * i; if (c + 1 <= size && h[c + 1] < h[c]) c++; if (h[i] <= h[c]) break; [h[i], h[c]] = [h[c], h[i]]; i = c; }
+  return top;
+}
+const hp = [null], swaps = [8, 3, 5, 1, 9, 2].map(x => heapPush(hp, x));
+same("pf1", "c", hp[3]); same("pf1", "d", hp[6]); same("pf1", "e", swaps[3]);
+same("pf1", "f", heapPop(hp)); same("pf1", "g", hp[1]); same("pf1", "h", hp[3]);
+same("pf1", "i", heapPush([null, ...Array.from({ length: 1023 }, (_, i) => i + 1)], 0));
+ok(ans("pf1", "a") === "i ÷ 2 の商" && ans("pf1", "b") === "c ＋ 1", "pf1〔a〕〔b〕が違う");
+
+// pf2 ダイクストラ法
+{
+  const n = 5, w = Array.from({ length: n + 1 }, () => Array(n + 1).fill(-1));
+  for (const [a, b, c] of [[1, 2, 4], [1, 3, 1], [2, 3, 2], [2, 4, 5], [3, 4, 8], [3, 5, 12], [4, 5, 3]]) w[a][b] = w[b][a] = c;
+  const dist = Array(n + 1).fill(Infinity), done = Array(n + 1).fill(false), prev = Array(n + 1).fill(0), order = [];
+  dist[1] = 0;
+  for (let k = 1; k <= n; k++) {
+    let u = 0;
+    for (let i = 1; i <= n; i++) if (!done[i] && (u === 0 || dist[i] < dist[u])) u = i;
+    done[u] = true; order.push(u);
+    for (let v = 1; v <= n; v++) if (w[u][v] !== -1 && !done[v] && dist[u] + w[u][v] < dist[v]) { dist[v] = dist[u] + w[u][v]; prev[v] = u; }
+  }
+  same("pf2", "c", order[2]); same("pf2", "d", dist[4]); same("pf2", "e", dist[5]); same("pf2", "f", prev[2]);
+  const path = [5]; while (path[0] !== 1) path.unshift(prev[path[0]]);
+  same("pf2", "g", path.join("→"));
+}
+
+// pf3 逆ポーランド記法
+function rpn(s, swap = false) {
+  const st = []; let max = 0;
+  for (const t of s.split(" ")) {
+    if (/^\d+$/.test(t)) st.push(Number(t));
+    else { let r = st.pop(), l = st.pop(); if (swap) [l, r] = [r, l]; st.push({ "＋": l + r, "−": l - r, "×": l * r, "÷": Math.trunc(l / r) }[t]); }
+    max = Math.max(max, st.length);
+  }
+  return [st[0], max];
+}
+same("pf3", "b", rpn("8 2 5 × ＋ 3 −")[0]); same("pf3", "c", rpn("8 2 5 × ＋ 3 −")[1]);
+same("pf3", "e", rpn("1 2 ＋ 3 ＋ 4 ＋")[1]); same("pf3", "f", rpn("1 2 3 4 ＋ ＋ ＋")[1]);
+ok(rpn("3 4 ＋ 5 2 − ×")[0] === 21, "pf3: 本文の例が 21 にならない");
+const broken = ["＋", "−", "×", "÷"].filter(op => rpn(`7 2 ${op}`)[0] !== rpn(`7 2 ${op}`, true)[0]);
+ok(broken.join("") === "−÷" && ans("pf3", "g") === "− と ÷", "pf3〔g〕: 取り違えで壊れる演算子が違う");
+// 中置記法 → 後置記法（操車場アルゴリズム）で〔d〕を確かめる
+{
+  const prec = { "＋": 1, "−": 1, "×": 2, "÷": 2 }, out = [], ops = [];
+  for (const t of "a × ( b ＋ c ) − d ÷ e".split(" ")) {
+    if (t === "(") ops.push(t);
+    else if (t === ")") { while (ops.at(-1) !== "(") out.push(ops.pop()); ops.pop(); }
+    else if (prec[t]) { while (ops.length && prec[ops.at(-1)] >= prec[t]) out.push(ops.pop()); ops.push(t); }
+    else out.push(t);
+  }
+  while (ops.length) out.push(ops.pop());
+  same("pf3", "d", out.join(" "));
+}
+
+// nf1・nf2
+same("nf1", "e", 2 ** (32 - 26) - 2);
+{ const interval = 5, timeout = 2, fails = 3; same("nf2", "b", interval * fails + timeout); }
+
+// df2 障害回復（チェックポイント 10:00、障害 10:05）
+{
+  const cp = 1000, txs = { a: [950, 955], b: [958, 1002], c: [959, null], d: [1001, 1003], e: [1004, null] };
+  for (const [k, [s, c]] of Object.entries(txs)) {
+    const need = c !== null ? (c < cp ? "何もしない" : "ロールフォワード") : (s < cp ? "ロールバック" : "何もしない");
+    same("df2", k, need);
+  }
+  same("df2", "h", 200 * 50 * 8 * 3600 / 1e6);
+}
+
+// af1・af2
+same("af1", "a", 1200000 * 5 / 1000 / 60);
+same("af1", "b", 1200000 * 5 / 1000 / 60 / 8);
+same("af1", "c", Math.max(1200000 * 3 / 4, 1200000 * 2 / 8) / 1000 / 60);
+same("af1", "d", (1 / (0.1 + 0.9 / 8)).toFixed(1));
+same("af2", "a", ((1 - 0.02 ** 2) * 0.99 * 100).toFixed(2));
+same("af2", "b", (4 - 1) * 2);
+same("af2", "c", 1);
+
+// ef1・ef2
+same("ef1", "a", 6 * 60 * 24);
+same("ef1", "b", 6 * 60 * 24 * 8);
+same("ef1", "c", 60 * 24 * (40 + 6 * 8));
+same("ef2", "d", 12 * 0.75);
+same("ef2", "e", Math.round(3.14 * 70 * 1000 / 360));
+
+// kf1 時間帯の重なり：総当たりで正しい条件と、「重ならない」組を確かめる
+{
+  const overlap = (s1, e1, s2, e2) => { for (let t = Math.min(s1, s2); t < Math.max(e1, e2); t++) if (s1 <= t && t < e1 && s2 <= t && t < e2) return true; return false; };
+  const forms = { "s2 ≦ e1 and s1 ≦ e2": (s1, e1, s2, e2) => s2 <= e1 && s1 <= e2, "s2 ＜ e1 and s1 ＜ e2": (s1, e1, s2, e2) => s2 < e1 && s1 < e2,
+    "s1 ＜ s2 and e2 ＜ e1": (s1, e1, s2, e2) => s1 < s2 && e2 < e1, "s2 ＞ e1 or s1 ＞ e2": (s1, e1, s2, e2) => s2 > e1 || s1 > e2 };
+  const right = Object.keys(forms).filter(f => { for (let s1 = 0; s1 < 6; s1++) for (let e1 = s1 + 1; e1 <= 6; e1++) for (let s2 = 0; s2 < 6; s2++) for (let e2 = s2 + 1; e2 <= 6; e2++) if (forms[f](s1, e1, s2, e2) !== overlap(s1, e1, s2, e2)) return false; return true; });
+  ok(right.length === 1, "kf1: 正しい条件がちょうど1つでない");
+  same("kf1", "d", right[0]);
+  const m = t => { const [h, mi] = t.split(":").map(Number); return h * 60 + mi; };
+  const it = PROBLEMS.find(p => p.id === "kf1").items.find(x => x.k === "e");
+  const noOverlap = it.o.filter(o => { const [, a, b, c, d] = o.match(/既存 ([\d:]+)〜([\d:]+)、新規 ([\d:]+)〜([\d:]+)/); return !overlap(m(a), m(b), m(c), m(d)); });
+  ok(noOverlap.length === 1, "kf1〔e〕: 重ならない組がちょうど1つでない");
+  same("kf1", "e", noOverlap[0]);
+}
+
+// kf2 テストの品質評価
+{
+  const rows = { 受注: [10, 700, 45], 出荷: [20, 600, 5], 請求: [10, 500, 10] };
+  const tot = Object.values(rows).reduce((a, r) => a.map((v, i) => v + r[i]), [0, 0, 0]);
+  same("kf2", "a", tot[1] / tot[0]); same("kf2", "b", tot[2] / tot[0]); same("kf2", "e", rows.受注[2] / rows.受注[0]);
+  const weakest = Object.entries(rows).sort((x, y) => x[1][1] / x[1][0] - y[1][1] / y[1][0])[0][0];
+  same("kf2", "d", weakest);
+}
+
+// uf2 SLA
+same("uf2", "b", Math.round(30 * 24 * 60 * 0.005));
 
 // ---------- 配信するファイル ----------
 section("オフライン用のファイル");

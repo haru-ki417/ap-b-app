@@ -71,14 +71,57 @@ with sync_playwright() as p:
 
     page.goto(url)
     check("%" in page.locator(".pitem >> nth=0").inner_text(), "一覧に得点が残る")
-    saved = page.evaluate("Object.keys(JSON.parse(localStorage.getItem('apB_v1'))).length")
+    saved = page.evaluate("Object.keys(JSON.parse(localStorage.getItem('apB_v1'))).filter(k => !k.startsWith('_')).length")
     check(saved == 2, "成績が端末に保存される")
 
+    # 記録：本番の日と選ぶ分野
+    page.click(".nav button[data-v=record]")
+    for f in ["prog", "arch", "nw", "db"]:
+        page.click(f'[data-sf={f}]')
+    page.fill("#examDate", "2099-01-01")
+    page.dispatch_event("#examDate", "change")
+    check(page.locator("[data-sf].on").count() == 4, "記録タブで選ぶ分野を設定できる")
+    page.click(".nav button[data-v=practice]")
+    check("あと" in page.inner_text("#countdown"), "演習タブに本番までの日数が出る")
+    mine = page.evaluate("PROBLEMS.filter(p => ['sec','prog','arch','nw','db'].includes(p.f)).length")
+    check(page.locator(".pitem").count() == mine, "「自分の分野」で選んだ分野だけが並ぶ")
+
+    # 過去問：点数の記録
+    page.click(".nav button[data-v=past]")
+    page.locator(".card.past").first.wait_for()
+    check(page.locator(".card.past").count() == page.evaluate("PAST.length"), "過去問の回がすべて並ぶ")
+    page.click("[data-ps=r07a][data-pf=prog]")
+    page.fill("#pPct", "７５")
+    page.click("#pSave")
+    check("75%" in page.inner_text("[data-ps=r07a][data-pf=prog]"), "過去問の点数を記録できる")
+    href = page.get_attribute(".card.past >> nth=0 >> a >> nth=1", "href")
+    check(href.endswith("_ap_pm_ans.pdf"), "過去問の解答例へのリンクがある")
+
+    # 要点カード
+    page.click(".nav button[data-v=cards]")
+    page.click(".fcard >> nth=0")
+    check(page.locator(".fcard >> nth=0 >> .fa").is_visible(), "要点カードをタップすると答えが出る")
+    page.click('.fcard >> nth=0 >> .kbtn')
+    check("1 /" in page.inner_text(".crow"), "覚えたカードが数えられる")
+
+    # 本番モード
+    page.goto(url + "#mock")
+    page.click("#mockStart")
+    check(page.locator("#v-mock .pitem").count() == 5, "本番モードで5題が出る")
+    check(":" in page.inner_text("#mockClock"), "本番モードの残り時間が出る")
+    page.click("#v-mock .pitem >> nth=0")
+    page.locator("#pane-q h4").first.wait_for()
+    check("残り" in page.inner_text("#timer"), "本番モードの問題では残り時間が出る")
+    page.goto(url + "#mock")
+    page.click("#mockEnd")
+    check("点" in page.inner_text("#v-mock .result"), "本番モードの結果が出る")
+
+    page.goto(url)
     ctx.set_offline(True)
     server.shutdown()
     page.reload()
-    check(page.locator(".pitem").count() == total, "オフラインでも開ける")
-    page.click(".pitem >> nth=10")
+    check(page.locator(".pitem").count() == mine, "オフラインでも開ける")
+    page.click(".pitem >> nth=3")
     page.locator("#pane-q h4").first.wait_for()
     page.click(".tab[data-t=s]")
     check(page.locator(".row").count() > 0, "オフラインでも解答用紙が出る")
