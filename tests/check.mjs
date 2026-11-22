@@ -169,6 +169,52 @@ same("v1", "b", (0.99 * 0.98).toFixed(4));
 same("v1", "c", ((1 - 0.01 ** 2) * 0.98).toFixed(4));
 same("v1", "d", 480 / (480 + 20));
 
+// b1 損益分岐点
+const price = 20000, vc = 12000, fc = 4000e4, cm = price - vc;
+same("b1", "a", cm / price * 100);
+same("b1", "b", fc / cm);
+same("b1", "c", (fc + 1200e4) / cm);
+same("b1", "d", ((7500 - fc / cm) / 7500 * 100).toFixed(1));
+same("b1", "e", fc / (price - (vc - 2000)));
+
+// a1 APサーバの台数と M/M/1
+const perServer = 4 * (1000 / 50);
+same("a1", "a", perServer);
+same("a1", "b", Math.ceil(150 / (perServer * 0.7)));
+same("a1", "c", Math.ceil(150 / (perServer * 0.7)) + 1);
+const mm1 = (lam, ts) => { const rho = lam * ts; return [rho, ts / (1 - rho) * 1000]; };
+same("a1", "d", Number(mm1(40, 0.02)[0].toFixed(3)));
+same("a1", "e", Math.round(mm1(40, 0.02)[1]));
+same("a1", "f", Math.round(mm1(45, 0.02)[1]));
+
+// k1 送料計算のテスト設計：境界の両側の値と、分岐網羅に必要なケース
+const ship = x => (x < 1 || x > 99999) ? "err" : x >= 5000 ? 0 : x >= 3000 ? 300 : 600;
+const classes = new Set(), bad = new Set();
+for (let x = -5; x <= 100005; x++) { const v = ship(x); (v === "err" ? bad : classes).add(v === "err" ? (x < 1 ? "low" : "high") : v); }
+same("k1", "a", classes.size);
+same("k1", "b", bad.size);
+const edges = [];
+for (let x = -5; x <= 100005; x++) if (String(ship(x)) !== String(ship(x + 1))) edges.push(x, x + 1);
+same("k1", "d", new Set(edges).size);
+ok(ship(4999) === 300 && ship(5000) === 0 && ans("k1", "c") === "4,999円と5,000円", "k1〔c〕: 送料無料の境界が違う");
+// 分岐網羅：3 つの判定それぞれの真と偽を通す、最少のケース数を総当たりで求める
+const path = x => (x < 1 || x > 99999) ? ["T"] : x >= 5000 ? ["F", "T"] : x >= 3000 ? ["F", "F", "T"] : ["F", "F", "F"];
+const reps = [0, 6000, 4000, 1000, 100000];
+const need = ["0T", "0F", "1T", "1F", "2T", "2F"];
+let best = Infinity;
+for (let m = 1; m < 1 << reps.length; m++) {
+  const got = new Set();
+  reps.forEach((x, i) => { if (m >> i & 1) path(x).forEach((r, j) => got.add(j + r)); });
+  if (need.every(n => got.has(n))) best = Math.min(best, m.toString(2).split("1").length - 1);
+}
+same("k1", "e", best);
+
+// k2 ベロシティ
+const vel = (18 + 22 + 20) / 3;
+same("k2", "a", vel);
+same("k2", "b", Math.ceil(120 / vel));
+same("k2", "c", Math.ceil(120 / vel) * 2);
+
 // ---------- 配信するファイル ----------
 section("オフライン用のファイル");
 const sw = read("sw.js");
