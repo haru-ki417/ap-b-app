@@ -1,39 +1,38 @@
-// 画面・解答用紙・採点・成績の保存（成績は端末の localStorage だけに置く）
-const KANA = ['ア','イ','ウ','エ','オ','カ','キ','ク'];
+// 画面・解答用紙・採点・過去問の記録・要点カード・本番モード
+// 成績や記録は端末の localStorage だけに置く（外部には送らない）
+const KANA = ['ア', 'イ', 'ウ', 'エ', 'オ', 'カ', 'キ', 'ク'];
 const KEY = 'apB_v1';
+const EXAM_MIN = 150;
+const FKEYS = Object.keys(FIELDS);
+const CHOICE_KEYS = FKEYS.filter(k => k !== 'sec');
+const qno = f => f === 'sec' ? 1 : FKEYS.indexOf(f) + 1; // 本番の問番号
+
+// 本番の問番号の順（分野の順）に並べる。同じ分野の中は、短い問題 → 本番レベルの順
+PROBLEMS.sort((x, y) => (FKEYS.indexOf(x.f) - FKEYS.indexOf(y.f)) || ((x.level === 'full') - (y.level === 'full')));
+
 let store = {};
 try { store = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { store = {}; }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} }
 function st(id) { if (!store[id]) store[id] = { ans: {}, self: {}, graded: false }; return store[id]; }
+// 問題以外の記録は _ で始まるキーに置く（問題の id は英小文字で始まる）
+const conf = () => (store._conf = store._conf || { fields: [], date: '' });
+const pastRec = () => (store._past = store._past || {});
+const known = () => (store._cards = store._cards || {});
+const myFields = () => conf().fields.length ? conf().fields : CHOICE_KEYS;
 
 const $ = (s) => document.querySelector(s);
-const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const len = (s) => [...(s || '').replace(/\s/g, '')].length;
 function norm(s) {
   return (s || '').normalize('NFKC').replace(/[−–—ー‐▲]/g, '-').replace(/[\s,，]/g, '')
-    .replace(/(mv|hz|万円|時間|分|回|日|個|件|つ|種類|ma|g)$/i, '').replace(/^\//, '').toLowerCase();
+    .replace(/(mv|hz|万円|円|時間|ms|秒|分|回|日|個|件|台|つ|種類|ma|g|%|ポイント|週間|週)$/i, '').replace(/^\//, '').toLowerCase();
 }
+const pctCls = v => v >= 80 ? 'g' : v >= 60 ? 'm' : 'b';
+const fieldTag = f => `<span class="tag ${f === 'sec' ? 'must' : ''}">問${qno(f)} ${FIELDS[f].name}</span>`;
+const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : null;
 
-let curF = 'all', cur = null, tab = 'q', t0 = 0, tick = null;
-
-/* ---------- 一覧 ---------- */
-function renderHome() {
-  const chips = [['all', 'すべて']].concat(Object.entries(FIELDS).map(([k, v]) => [k, v.name]));
-  $('#chips').innerHTML = chips.map(([k, n]) => `<button class="chip ${k === curF ? 'on' : ''}" data-f="${k}">${n}</button>`).join('');
-  const list = PROBLEMS.filter(p => curF === 'all' || p.f === curF);
-  $('#plist').innerHTML = list.map(p => {
-    const s = store[p.id], F = FIELDS[p.f];
-    let sc = '未着手', cls = '';
-    if (s && s.graded) { const r = score(p); sc = r.pct + '%'; cls = r.pct >= 80 ? 'g' : r.pct >= 60 ? 'm' : 'b'; }
-    else if (s && Object.keys(s.ans).length) sc = '途中';
-    return `<a class="pitem" href="#${p.id}"><div class="t"><span class="tag ${p.f === 'sec' ? 'must' : ''}">${F.name}</span><span class="sub">目安${p.min}分・${p.items.length}問</span><b>${esc(p.title)}</b></div><div class="score ${cls}">${sc}</div></a>`;
-  }).join('');
-  const done = PROBLEMS.filter(p => store[p.id] && store[p.id].graded);
-  const avg = done.length ? Math.round(done.reduce((a, p) => a + score(p).pct, 0) / done.length) : 0;
-  $('#summary').innerHTML = `採点済み ${done.length} / ${PROBLEMS.length} 題` + (done.length ? `　平均 ${avg}%` : '') +
-    `<br>解答と採点結果はこのスマホの中だけに保存され、オフラインでも使えます。`;
-}
-$('#chips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; curF = b.dataset.f; renderHome(); });
+let view = 'practice', curF = 'mine', cur = null, tab = 'q', t0 = 0, tick = null;
+let cardG = 'how', cardOnlyNew = false, openPast = null, resetArm = false;
 
 /* ---------- 採点 ---------- */
 function itemPoint(p, i) {
@@ -47,25 +46,257 @@ function score(p) {
   p.items.forEach((_, i) => { const v = itemPoint(p, i); if (v === null) pend++; else got += v; });
   return { got, pend, n: p.items.length, pct: Math.round(got / p.items.length * 100) };
 }
+const graded = p => store[p.id] && store[p.id].graded;
+
+/* ---------- 画面の切り替え ---------- */
+const VIEWS = ['practice', 'past', 'cards', 'record', 'review', 'mock'];
+function show(v) {
+  view = v; cur = null; clearInterval(tick); tick = null;
+  $('#view').classList.add('hidden'); $('#home').classList.remove('hidden');
+  VIEWS.forEach(k => $('#v-' + k).classList.toggle('hidden', k !== v));
+  const navKey = v === 'review' || v === 'mock' ? 'practice' : v;
+  document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.v === navKey));
+  ({ practice: renderPractice, past: renderPast, cards: renderCards, record: renderRecord, review: renderReview, mock: renderMock })[v]();
+  if (v === 'mock' && store._exam) tick = setInterval(renderMockClock, 1000);
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.nav button').forEach(b => b.addEventListener('click', () => { location.hash = b.dataset.v === 'practice' ? '' : b.dataset.v; if (b.dataset.v === 'practice') route(); }));
+
+function daysLeft() {
+  const d = conf().date; if (!d) return null;
+  const t = new Date(d + 'T00:00:00'), now = new Date(); now.setHours(0, 0, 0, 0);
+  return Math.round((t - now) / 86400000);
+}
+
+/* ---------- 演習 ---------- */
+function renderPractice() {
+  const dl = daysLeft();
+  $('#countdown').innerHTML = dl === null ? '' : dl > 0 ? `本番まで あと <b>${dl}</b> 日` : dl === 0 ? '<b>今日が本番</b>' : '';
+  const wrongN = PROBLEMS.filter(p => graded(p) && p.items.some((_, i) => itemPoint(p, i) !== 1)).length;
+  $('#actions').innerHTML = `<a class="btn" href="#mock">${store._exam ? '本番モード（解答中）' : '本番モード（150分）'}</a><a class="btn ghost" href="#review">復習（${wrongN}題）</a>`;
+  const chips = [['mine', '自分の分野'], ['all', 'すべて'], ['full', '本番レベル']].concat(FKEYS.map(k => [k, FIELDS[k].name]));
+  $('#chips').innerHTML = chips.map(([k, n]) => `<button class="chip ${k === curF ? 'on' : ''}" data-f="${k}">${n}</button>`).join('');
+  const mine = ['sec'].concat(myFields());
+  const list = PROBLEMS.filter(p => curF === 'all' || (curF === 'mine' ? mine.includes(p.f) : curF === 'full' ? p.level === 'full' : p.f === curF));
+  $('#plist').innerHTML = list.map(p => {
+    const s = store[p.id];
+    let sc = '未着手', cls = '';
+    if (s && s.graded) { const r = score(p); sc = r.pct + '%'; cls = pctCls(r.pct); }
+    else if (s && Object.keys(s.ans).length) sc = '途中';
+    return `<a class="pitem" href="#${p.id}"><div class="t">${fieldTag(p.f)}${p.level === 'full' ? '<span class="tag full">本番レベル</span>' : ''}<span class="sub">目安${p.min}分・${p.items.length}問</span><b>${esc(p.title)}</b></div><div class="score ${cls}">${sc}</div></a>`;
+  }).join('') || '<p class="sub">この条件の問題はありません。</p>';
+  const done = PROBLEMS.filter(graded);
+  const a = avg(done.map(p => score(p).pct));
+  $('#summary').innerHTML = `採点済み ${done.length} / ${PROBLEMS.length} 題` + (a !== null ? `　平均 ${a}%` : '') +
+    (conf().fields.length ? '' : '<br>「記録」タブで本番に選ぶ分野を設定すると、「自分の分野」で絞り込めます。') +
+    `<br>解答と記録はこのスマホの中だけに保存され、オフラインでも使えます。`;
+}
+$('#chips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; curF = b.dataset.f; renderPractice(); });
+
+/* ---------- 復習 ---------- */
+function renderReview() {
+  const rows = PROBLEMS.filter(graded).map(p => {
+    const miss = p.items.map((it, i) => [it, itemPoint(p, i)]).filter(([, v]) => v !== 1);
+    return miss.length ? { p, miss } : null;
+  }).filter(Boolean);
+  $('#v-review').innerHTML = `<a class="back" href="#">‹ 演習</a><h2>復習</h2>
+  <p class="sub">採点した問題のうち、×・△・自己採点待ちの設問がある問題です。開くと解答用紙で正解と解説を確認でき、「解き直す」で白紙に戻せます。</p>` +
+    (rows.length ? rows.map(({ p, miss }) => `<a class="pitem" href="#${p.id}"><div class="t">${fieldTag(p.f)}<b>${esc(p.title)}</b>
+      <span class="sub">${miss.map(([it, v]) => `${v === null ? '？' : v === 0.5 ? '△' : '×'}〔${it.k}〕${it.l}`).join('　')}</span></div>
+      <div class="score ${pctCls(score(p).pct)}">${score(p).pct}%</div></a>`).join('') : '<div class="card">まだ復習する設問はありません。</div>');
+}
+
+/* ---------- 本番モード ---------- */
+function pickFor(f) {
+  const pool = PROBLEMS.filter(p => p.f === f);
+  const rank = p => (graded(p) ? 2 : 0) + (p.level === 'full' ? 0 : 1);
+  const best = Math.min(...pool.map(rank));
+  const cands = pool.filter(p => rank(p) === best);
+  return cands[Math.floor(Math.random() * cands.length)];
+}
+function renderMock() {
+  const ex = store._exam;
+  let h = `<a class="back" href="#">‹ 演習</a><h2>本番モード</h2>`;
+  if (!ex) {
+    const sel = store._mockSel || myFields().slice(0, 4);
+    h += `<p class="sub">問1（情報セキュリティ）と、選んだ4分野から1題ずつ出題します。制限時間は${EXAM_MIN}分。未着手の本番レベルの問題を優先して選びます。</p>
+    <div class="card"><b>選ぶ4分野</b>（${sel.length} / 4）<div class="chips wrapc">` +
+      CHOICE_KEYS.map(k => `<button class="chip ${sel.includes(k) ? 'on' : ''}" data-mf="${k}">${FIELDS[k].name}</button>`).join('') +
+      `</div><div class="btns"><button class="btn" id="mockStart" ${sel.length === 4 ? '' : 'disabled'}>${EXAM_MIN}分で始める</button></div></div>`;
+    const hist = store._mocks || [];
+    if (hist.length) h += `<h2>これまでの結果</h2>` + hist.slice().reverse().map(m => `<div class="card mrow"><span>${esc(m.date)}</span><span>${m.fields.map(f => FIELDS[f].name).join('・')}</span><b class="${pctCls(m.score)}">${m.score}点</b></div>`).join('');
+  } else {
+    h += `<div class="card result"><div class="sub">残り時間</div><div class="big" id="mockClock"></div></div>
+    <p class="sub">各問題を開いて解き、解答用紙で採点してください。記述の自己採点まで終えたら「終了して結果を見る」を押します。</p>`;
+    ex.ids.forEach((id, i) => {
+      const p = PROBLEMS.find(x => x.id === id); if (!p) return;
+      const s = store[id]; const r = score(p);
+      const stt = s && s.graded ? (r.pend ? `採点済み（記述 ${r.pend} 問が自己採点待ち）` : `${r.pct}%`) : s && Object.keys(s.ans).length ? '解答中' : '未着手';
+      h += `<a class="pitem" href="#${id}"><div class="t">${fieldTag(p.f)}<b>${i + 1}. ${esc(p.title)}</b><span class="sub">${stt}</span></div></a>`;
+    });
+    h += `<div class="btns"><button class="btn" id="mockEnd">終了して結果を見る</button></div>
+    <div class="btns"><button class="btn ghost" id="mockQuit">${resetArm ? 'もう一度押すと記録せずにやめます' : '記録せずにやめる'}</button></div>`;
+  }
+  $('#v-mock').innerHTML = h;
+  renderMockClock();
+}
+function mockLeft() { const ex = store._exam; return ex ? ex.start + EXAM_MIN * 60000 - Date.now() : 0; }
+function fmtLeft(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
+function renderMockClock() {
+  const el = $('#mockClock'); if (!el || !store._exam) return;
+  const ms = mockLeft(); el.textContent = ms > 0 ? fmtLeft(ms) : '時間切れ'; el.classList.toggle('over', ms <= 0);
+}
+$('#v-mock').addEventListener('click', e => {
+  const c = e.target.closest('[data-mf]');
+  if (c) {
+    const sel = store._mockSel || myFields().slice(0, 4), k = c.dataset.mf;
+    store._mockSel = sel.includes(k) ? sel.filter(x => x !== k) : sel.length < 4 ? sel.concat(k) : sel;
+    save(); renderMock(); return;
+  }
+  if (e.target.id === 'mockStart') {
+    const sel = store._mockSel || myFields().slice(0, 4);
+    const fields = ['sec'].concat(sel.slice().sort((a, b) => FKEYS.indexOf(a) - FKEYS.indexOf(b)));
+    const ids = fields.map(f => pickFor(f).id);
+    ids.forEach(id => { store[id] = { ans: {}, self: {}, graded: false }; });
+    store._exam = { ids, fields: sel, start: Date.now() }; save(); show('mock'); return;
+  }
+  if (e.target.id === 'mockEnd') {
+    const ex = store._exam, ps = ex.ids.map(id => PROBLEMS.find(p => p.id === id));
+    const sc = Math.round(ps.reduce((a, p) => a + (graded(p) ? score(p).got / p.items.length : 0), 0) / ps.length * 100);
+    const d = new Date();
+    (store._mocks = store._mocks || []).push({ date: `${d.getMonth() + 1}/${d.getDate()}`, fields: ex.fields, score: sc, ids: ex.ids,
+      min: Math.round((Date.now() - ex.start) / 60000) });
+    store._exam = null; save();
+    $('#v-mock').innerHTML = `<a class="back" href="#">‹ 演習</a><h2>本番モードの結果</h2>
+      <div class="card result"><div class="big ${pctCls(sc)}">${sc}点</div><div class="sub">${sc >= 60 ? '合格ライン（60点）を超えています' : '合格ラインは60点です'}・かかった時間 ${store._mocks.slice(-1)[0].min}分</div></div>` +
+      ps.map(p => `<a class="pitem" href="#${p.id}"><div class="t">${fieldTag(p.f)}<b>${esc(p.title)}</b></div><div class="score ${pctCls(score(p).pct)}">${graded(p) ? score(p).pct + '%' : '未採点'}</div></a>`).join('') +
+      `<p class="sub">点数は、各問題の設問ごとの正解の割合（△は半分）を平均したものです。本番の配点とは異なります。</p>`;
+    clearInterval(tick); return;
+  }
+  if (e.target.id === 'mockQuit') {
+    if (!resetArm) { resetArm = true; renderMock(); setTimeout(() => { resetArm = false; }, 4000); return; }
+    resetArm = false; store._exam = null; save(); show('mock');
+  }
+});
+
+/* ---------- 過去問 ---------- */
+function renderPast() {
+  const cols = ['sec'].concat(myFields());
+  const rec = pastRec();
+  const cnt = f => PAST.filter(s => rec[s.id] && rec[s.id][f]).length;
+  let h = `<h2>IPAの過去問（午後）</h2>
+  <p class="sub">本番の科目Bと同じ形式の、IPAが公開している午後の過去問題です。時間を測って解き、解答例で採点して点数を記録しましょう。問題冊子・解答例・採点講評はIPAのサイトのPDFを開きます（ネット接続が必要）。</p>
+  <div class="card"><b>解いた回数</b><div class="pgrid">` +
+    cols.map(f => `<span>問${qno(f)} ${FIELDS[f].name}</span><b>${cnt(f)} / ${PAST.length}</b>`).join('') + `</div>` +
+    (conf().fields.length ? '' : `<p class="sub">「記録」タブで本番に選ぶ分野を設定すると、その分野だけ表示されます。</p>`) + `</div>`;
+  PAST.forEach(s => {
+    const r = rec[s.id] || {};
+    h += `<div class="card past"><div class="ph"><b>${s.name}</b><span class="links">
+      <a href="${pastUrl(s, 'qs')}" target="_blank" rel="noopener">問題</a><a href="${pastUrl(s, 'ans')}" target="_blank" rel="noopener">解答例</a><a href="${pastUrl(s, 'cmnt')}" target="_blank" rel="noopener">講評</a></span></div>
+      <div class="pchips">` + cols.map(f => {
+        const x = r[f];
+        return `<button class="pchip ${x ? pctCls(x.pct) : ''} ${openPast === s.id + '/' + f ? 'sel' : ''}" data-ps="${s.id}" data-pf="${f}">問${qno(f)}<small>${x ? x.pct + '%' : FIELDS[f].s}</small></button>`;
+      }).join('') + `</div>`;
+    if (openPast && openPast.startsWith(s.id + '/')) {
+      const f = openPast.split('/')[1], x = r[f] || {};
+      h += `<div class="pedit"><div class="lab">${s.name} 問${qno(f)} ${FIELDS[f].name}</div>
+        <label>正解した設問の割合（%）<input class="num" id="pPct" inputmode="numeric" value="${x.pct ?? ''}" placeholder="0〜100"></label>
+        <label>メモ（間違えた理由・覚えること）<textarea id="pMemo">${esc(x.memo || '')}</textarea></label>
+        <div class="btns"><button class="btn" id="pSave">記録する</button>${x.pct !== undefined ? '<button class="btn ghost" id="pDel">記録を消す</button>' : ''}</div>
+        ${x.date ? `<div class="sub">記録した日：${esc(x.date)}</div>` : ''}</div>`;
+    }
+    h += `</div>`;
+  });
+  h += `<p class="sub">出典：独立行政法人情報処理推進機構（IPA）「問題冊子・配点割合・解答例・採点講評」。令和2年度春期は試験が中止されたため問題がありません。2026年度からのCBTの問題は公開されていません。</p>`;
+  $('#v-past').innerHTML = h;
+}
+$('#v-past').addEventListener('click', e => {
+  const c = e.target.closest('[data-ps]');
+  if (c) { const k = c.dataset.ps + '/' + c.dataset.pf; openPast = openPast === k ? null : k; renderPast(); return; }
+  if (e.target.id === 'pSave' || e.target.id === 'pDel') {
+    const [sid, f] = openPast.split('/'), rec = pastRec();
+    rec[sid] = rec[sid] || {};
+    if (e.target.id === 'pDel') delete rec[sid][f];
+    else {
+      const v = Math.round(Number(norm($('#pPct').value)));
+      if (!(v >= 0 && v <= 100)) { $('#pPct').classList.add('bad'); return; }
+      const d = new Date();
+      rec[sid][f] = { pct: v, memo: $('#pMemo').value, date: `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` };
+    }
+    openPast = null; save(); renderPast();
+  }
+});
+
+/* ---------- 要点カード ---------- */
+function renderCards() {
+  const groups = Object.entries(CARD_GROUPS).concat(FKEYS.filter(k => CARDS.some(c => c.f === k)).map(k => [k, FIELDS[k].name]));
+  const kn = known();
+  const list = CARDS.map((c, i) => ({ c, i })).filter(({ c, i }) => c.f === cardG && !(cardOnlyNew && kn[i]));
+  const total = CARDS.filter(c => c.f === cardG).length, done = CARDS.filter((c, i) => c.f === cardG && kn[i]).length;
+  $('#v-cards').innerHTML = `<h2>要点カード</h2><p class="sub">タップすると答えが出ます。覚えたら「覚えた」を押すと、次から外せます。</p>
+  <div class="chips">` + groups.map(([k, n]) => `<button class="chip ${k === cardG ? 'on' : ''}" data-cg="${k}">${n}</button>`).join('') + `</div>
+  <div class="crow"><span class="sub">覚えた ${done} / ${total}</span><button class="chip ${cardOnlyNew ? 'on' : ''}" id="onlyNew">まだ覚えていないものだけ</button></div>` +
+    list.map(({ c, i }) => `<div class="fcard" data-ci="${i}"><div class="fq">${esc(c.q)}</div><div class="fa hidden">${esc(c.a)}</div>
+      <div class="fk"><button class="kbtn ${kn[i] ? 'on' : ''}" data-ki="${i}">${kn[i] ? '覚えた ✓' : '覚えた'}</button></div></div>`).join('') +
+    (list.length ? '' : '<div class="card">このグループのカードはすべて覚えました。</div>');
+}
+$('#v-cards').addEventListener('click', e => {
+  const g = e.target.closest('[data-cg]'); if (g) { cardG = g.dataset.cg; renderCards(); return; }
+  if (e.target.id === 'onlyNew') { cardOnlyNew = !cardOnlyNew; renderCards(); return; }
+  const k = e.target.closest('[data-ki]');
+  if (k) { const kn = known(), i = k.dataset.ki; if (kn[i]) delete kn[i]; else kn[i] = 1; save(); const y = window.scrollY; renderCards(); window.scrollTo(0, y); return; }
+  const c = e.target.closest('.fcard'); if (c) c.querySelector('.fa').classList.toggle('hidden');
+});
+
+/* ---------- 記録・設定 ---------- */
+function renderRecord() {
+  const c = conf(), rec = pastRec(), kn = known();
+  let h = `<h2>設定</h2><div class="card"><label>本番の日<input type="date" class="num" id="examDate" value="${esc(c.date)}"></label>
+    <div class="lab" style="margin-top:10px">本番で選ぶ分野（候補も含めて選べます）</div><div class="chips wrapc">` +
+    CHOICE_KEYS.map(k => `<button class="chip ${c.fields.includes(k) ? 'on' : ''}" data-sf="${k}">${FIELDS[k].name}</button>`).join('') +
+    `</div><p class="sub">選んだ分野は「演習」の「自分の分野」、「過去問」、「本番モード」で使います。</p></div>
+    <h2>分野別の成績</h2><div class="card"><table class="stat"><tr><th>分野</th><th>演習</th><th>過去問</th><th>カード</th></tr>`;
+  FKEYS.forEach(f => {
+    const ex = avg(PROBLEMS.filter(p => p.f === f && graded(p)).map(p => score(p).pct));
+    const pa = avg(PAST.map(s => rec[s.id] && rec[s.id][f] && rec[s.id][f].pct).filter(v => v !== undefined && v !== null));
+    const cs = CARDS.map((x, i) => [x, i]).filter(([x]) => x.f === f);
+    const cell = v => v === null ? '<td class="sub">—</td>' : `<td class="${pctCls(v)}">${v}%</td>`;
+    h += `<tr class="${f === 'sec' || c.fields.includes(f) ? 'mine' : ''}"><td>問${qno(f)} ${FIELDS[f].name}</td>${cell(ex)}${cell(pa)}<td class="sub">${cs.length ? cs.filter(([, i]) => kn[i]).length + '/' + cs.length : '—'}</td></tr>`;
+  });
+  h += `</table><p class="sub">太字は本番で選ぶ分野。60%未満（赤）の分野から優先して復習しましょう。</p></div>
+    <h2>データ</h2><div class="card"><p class="sub">記録はこのスマホのこのアプリの中だけにあります。</p>
+    <div class="btns"><button class="btn ghost" id="resetAll">${resetArm ? 'もう一度押すとすべて消えます' : 'すべての記録を消す'}</button></div></div>`;
+  $('#v-record').innerHTML = h;
+}
+$('#v-record').addEventListener('click', e => {
+  const f = e.target.closest('[data-sf]');
+  if (f) { const c = conf(), k = f.dataset.sf; c.fields = c.fields.includes(k) ? c.fields.filter(x => x !== k) : c.fields.concat(k); c.fields.sort((a, b) => FKEYS.indexOf(a) - FKEYS.indexOf(b)); delete store._mockSel; save(); renderRecord(); return; }
+  if (e.target.id === 'resetAll') {
+    if (!resetArm) { resetArm = true; renderRecord(); setTimeout(() => { resetArm = false; if (view === 'record' && !cur) renderRecord(); }, 4000); return; }
+    resetArm = false; store = {}; save(); renderRecord();
+  }
+});
+$('#v-record').addEventListener('change', e => { if (e.target.id === 'examDate') { conf().date = e.target.value; save(); } });
 
 /* ---------- 問題を開く ---------- */
 function open(id) {
   cur = PROBLEMS.find(p => p.id === id);
-  if (!cur) { close(); return; }
+  if (!cur) { show('practice'); return; }
   $('#home').classList.add('hidden'); $('#view').classList.remove('hidden');
   $('#vttl').textContent = cur.title;
+  const inExam = store._exam && store._exam.ids.includes(id);
+  $('#backBtn').textContent = inExam ? '‹ 本番' : '‹ 一覧';
   t0 = Date.now(); clearInterval(tick); tick = setInterval(updTimer, 1000); updTimer();
   renderQ(); renderS(); renderE(); setTab('q');
   window.scrollTo(0, 0);
 }
-function close() {
-  clearInterval(tick); cur = null;
-  $('#view').classList.add('hidden'); $('#home').classList.remove('hidden'); renderHome();
-}
 function updTimer() {
+  if (!cur) return;
+  if (store._exam && store._exam.ids.includes(cur.id)) {
+    const ms = mockLeft(); $('#timer').textContent = ms > 0 ? `残り ${fmtLeft(ms)}` : '時間切れ'; return;
+  }
   const s = Math.floor((Date.now() - t0) / 1000);
-  const mm = String(Math.floor(s / 60)).padStart(2, '0'), ss = String(s % 60).padStart(2, '0');
-  $('#timer').textContent = `${mm}:${ss} / 目安${cur.min}分`;
+  $('#timer').textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')} / 目安${cur.min}分`;
 }
 function setTab(t) {
   tab = t;
@@ -74,7 +305,10 @@ function setTab(t) {
   window.scrollTo(0, 0);
 }
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.t)));
-$('#backBtn').addEventListener('click', () => { location.hash = ''; close(); });
+$('#backBtn').addEventListener('click', () => {
+  const back = store._exam && cur && store._exam.ids.includes(cur.id) ? 'mock' : (VIEWS.includes(lastView) ? lastView : 'practice');
+  location.hash = back === 'practice' ? '' : back; if (back === 'practice') route();
+});
 
 function groupHtml(it, title) {
   return `<div class="grp"><div class="gh">${title}</div>` + it.o.map((o, j) => `<div>${KANA[j]}　${esc(o)}</div>`).join('') + '</div>';
@@ -84,7 +318,7 @@ function renderQ() {
     const it = cur.items.find(x => x.k === k);
     return it ? groupHtml(it, it.g || `〔${k}〕の解答群`) : '';
   });
-  $('#pane-q').innerHTML = `<p class="sub"><span class="tag ${cur.f === 'sec' ? 'must' : ''}">${FIELDS[cur.f].name}</span>目安${cur.min}分</p>` + body +
+  $('#pane-q').innerHTML = `<p class="sub">${fieldTag(cur.f)}${cur.level === 'full' ? '<span class="tag full">本番レベル</span>' : ''}目安${cur.min}分</p>` + body +
     `<div class="btns"><button class="btn" onclick="setTab('s')">解答用紙へ</button></div>`;
 }
 
@@ -155,19 +389,28 @@ function renderE() {
     $('#pane-e').innerHTML = `<div class="lock">採点すると解説が表示されます。<div class="btns"><button class="btn ghost" id="peek">採点せずに見る</button></div></div>`;
     return;
   }
+  const inExam = store._exam && store._exam.ids.includes(cur.id);
   $('#pane-e').innerHTML = `<h2>解答・解説</h2>` + cur.exp +
-    `<div class="btns"><button class="btn ghost" onclick="setTab('s')">解答用紙へ</button><button class="btn" id="next">次の問題</button></div>`;
+    `<div class="btns"><button class="btn ghost" onclick="setTab('s')">解答用紙へ</button><button class="btn" id="next">${inExam ? '本番モードに戻る' : '次の問題'}</button></div>`;
 }
 $('#pane-e').addEventListener('click', e => {
   if (e.target.id === 'peek') { peekExp = true; renderE(); peekExp = false; }
   if (e.target.id === 'next') {
+    if (store._exam && store._exam.ids.includes(cur.id)) { location.hash = 'mock'; return; }
     const k = PROBLEMS.indexOf(cur), n = PROBLEMS[(k + 1) % PROBLEMS.length];
     location.hash = n.id;
   }
 });
 
 /* ---------- ルーティング ---------- */
-function route() { const id = location.hash.slice(1); if (id && PROBLEMS.some(p => p.id === id)) open(id); else close(); }
+let lastView = 'practice';
+function route() {
+  const id = location.hash.slice(1);
+  if (id && PROBLEMS.some(p => p.id === id)) { open(id); return; }
+  const v = VIEWS.includes(id) ? id : 'practice';
+  if (['practice', 'past', 'cards', 'record', 'review'].includes(v)) lastView = v;
+  show(v);
+}
 window.addEventListener('hashchange', route);
 route();
 

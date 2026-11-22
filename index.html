@@ -17,22 +17,37 @@
 </head>
 <body>
 <div id="home" class="wrap">
-  <h1>応用情報 科目B スマホ演習</h1>
-  <p class="sub">旧「午後」形式の記述・穴埋め問題。1問15〜20分を目安に、すきま時間で1問ずつ。</p>
-  <details class="card">
-    <summary>科目Bの構成と解き方</summary>
-    <ul>
-      <li>試験時間150分。<b>問1（情報セキュリティ）は必須</b>、問2〜11から<b>4問を選択</b>して計5問。1問あたり約30分。</li>
-      <li>科目A・科目Bそれぞれ60点以上で合格。</li>
-      <li>選択する分野は事前に決めておく。本番で難しい問題に当たったときのため、予備に1〜2分野多く練習しておくと安心。</li>
-      <li>記述は「問われた形」で答える（理由なら「〜から／〜ため」で終える）。</li>
-      <li>字数は上限の7〜8割以上を目安に。本文中の言葉を使うと採点者に伝わりやすい。</li>
-      <li>解答群から選ぶ設問・計算問題を先に片付け、記述は後回しにすると時間を守りやすい。</li>
-    </ul>
-  </details>
-  <div class="chips" id="chips"></div>
-  <div class="plist" id="plist"></div>
-  <div class="card sub" id="summary"></div>
+  <section id="v-practice">
+    <h1>応用情報 科目B スマホ演習</h1>
+    <p class="cd" id="countdown"></p>
+    <details class="card">
+      <summary>科目Bの構成と解き方</summary>
+      <ul>
+        <li>試験時間150分。<b>問1（情報セキュリティ）は必須</b>、問2〜11から<b>4問を選択</b>して計5問。1問あたり約30分。</li>
+        <li>科目A・科目Bそれぞれ60点以上で合格。</li>
+        <li>選択する分野は事前に決めておく。本番で難しい問題に当たったときのため、予備に1〜2分野多く練習しておくと安心。</li>
+        <li>記述は「問われた形」で答える（理由なら「〜から／〜ため」で終える）。</li>
+        <li>字数は上限の7〜8割以上を目安に。本文中の言葉を使うと採点者に伝わりやすい。</li>
+        <li>解答群から選ぶ設問・計算問題を先に片付け、記述は後回しにすると時間を守りやすい。</li>
+        <li>仕上げは「過去問」タブのIPAの過去問。時間を測って解き、解答例で採点する。</li>
+      </ul>
+    </details>
+    <div class="actions" id="actions"></div>
+    <div class="chips" id="chips"></div>
+    <div class="plist" id="plist"></div>
+    <div class="card sub" id="summary"></div>
+  </section>
+  <section id="v-review" class="hidden"></section>
+  <section id="v-mock" class="hidden"></section>
+  <section id="v-past" class="hidden"></section>
+  <section id="v-cards" class="hidden"></section>
+  <section id="v-record" class="hidden"></section>
+  <nav class="nav">
+    <button data-v="practice">演習</button>
+    <button data-v="past">過去問</button>
+    <button data-v="cards">要点</button>
+    <button data-v="record">記録</button>
+  </nav>
 </div>
 
 <div id="view" class="hidden">
@@ -56,6 +71,9 @@
 </div>
 
 <script src="js/problems.js"></script>
+<script src="js/problems-full.js"></script>
+<script src="js/past.js"></script>
+<script src="js/cards.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

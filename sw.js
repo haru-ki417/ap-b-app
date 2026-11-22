@@ -1,10 +1,10 @@
 // オフラインで使うためのサービスワーカー
 // まず保存してある版を表示し、つながっていれば裏で最新版を取りに行く（次に開いたときに新しい版になる）
 // 問題を更新したら CACHE の番号を上げる（v1 → v2）
-const CACHE = "apb-v2";
+const CACHE = "apb-v3";
 const FILES = [
   "./", "./index.html", "./manifest.webmanifest",
-  "./css/style.css", "./js/problems.js", "./js/app.js",
+  "./css/style.css", "./js/problems.js", "./js/problems-full.js", "./js/past.js", "./js/cards.js", "./js/app.js",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png"
 ];
 
