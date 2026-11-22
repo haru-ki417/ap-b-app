@@ -2,17 +2,17 @@
 // items の t: 'c' = 解答群から選ぶ（a は正解の番号、0 始まり）／'n' = 数値・アドレスを入力（a は正解の候補）／'w' = 記述（lim 字以内、a は解答例、kw はキーワード）
 // body の {{g:記号}} は、その記号の解答群に置き換わる
 const FIELDS = {
-  sec: { name: '情報セキュリティ', note: '問1・必須' },
-  st: { name: '経営戦略', note: '問2' },
-  prog: { name: 'プログラミング', note: '問3' },
-  arch: { name: 'システムアーキテクチャ', note: '問4' },
-  nw: { name: 'ネットワーク', note: '問5' },
-  db: { name: 'データベース', note: '問6' },
-  emb: { name: '組込みシステム', note: '問7' },
-  dev: { name: '情報システム開発', note: '問8' },
-  pm: { name: 'プロジェクトマネジメント', note: '問9' },
-  sm: { name: 'サービスマネジメント', note: '問10' },
-  au: { name: 'システム監査', note: '問11' },
+  sec: { name: '情報セキュリティ', note: '問1・必須', s: 'セキュ' },
+  st: { name: '経営戦略', note: '問2', s: '経営' },
+  prog: { name: 'プログラミング', note: '問3', s: 'プログラム' },
+  arch: { name: 'システムアーキテクチャ', note: '問4', s: 'アーキ' },
+  nw: { name: 'ネットワーク', note: '問5', s: 'NW' },
+  db: { name: 'データベース', note: '問6', s: 'DB' },
+  emb: { name: '組込みシステム', note: '問7', s: '組込み' },
+  dev: { name: '情報システム開発', note: '問8', s: '開発' },
+  pm: { name: 'プロジェクトマネジメント', note: '問9', s: 'PM' },
+  sm: { name: 'サービスマネジメント', note: '問10', s: 'SM' },
+  au: { name: 'システム監査', note: '問11', s: '監査' },
 };
 
 const PROBLEMS = [
@@ -942,6 +942,3 @@ endif</pre>
 <p class="tip">「整備状況（ルールや仕組みがあるか）」と「運用状況（実際にそのとおり動いているか）」の区別は、監査の問題でほぼ毎回問われる。</p>`
 },
 ];
-
-// 本番の問番号の順（分野の順）に並べる。同じ分野の中は書いた順のまま
-PROBLEMS.sort((x, y) => Object.keys(FIELDS).indexOf(x.f) - Object.keys(FIELDS).indexOf(y.f));
