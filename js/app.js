@@ -264,7 +264,18 @@ function renderRecord() {
     h += `<tr class="${f === 'sec' || c.fields.includes(f) ? 'mine' : ''}"><td>問${qno(f)} ${FIELDS[f].name}</td>${cell(ex)}${cell(pa)}<td class="sub">${cs.length ? cs.filter(([, i]) => kn[i]).length + '/' + cs.length : '—'}</td></tr>`;
   });
   h += `</table><p class="sub">太字は本番で選ぶ分野。60%未満（赤）の分野から優先して復習しましょう。</p></div>
-    <h2>データ</h2><div class="card"><p class="sub">記録はこのスマホのこのアプリの中だけにあります。</p>
+    <h2>パソコンで使う</h2><div class="card"><p class="sub">パソコンのブラウザでも同じURL（haru-ki417.github.io/ap-b-app）で使えます。画面が広いと、左に問題、右に解答用紙が並び、本番のCBTと同じようにキーボードで解答を入力できます。ChromeやEdgeでは、アドレスバーの右端のインストールボタン（またはメニューの「アプリとしてインストール」）から、アプリとしてデスクトップに置けます。</p></div>
+    <h2>記録の引き継ぎ（スマホ ⇔ パソコン）</h2><div class="card">
+    <p class="sub">記録は端末ごと（ブラウザ・ホーム画面のアプリごと）に別々に保存されます。別の端末で続けるときは、ここで書き出した記録を、もう一方の端末の「読み込む」に貼り付けてください。</p>
+    <div class="btns"><button class="btn" id="expBtn">記録を書き出す</button></div>
+    <div id="expArea" class="hidden"><textarea id="expText" readonly></textarea>
+      <div class="btns"><button class="btn ghost" id="expCopy">コピー</button><button class="btn ghost" id="expFile">ファイルに保存</button></div>
+      <p class="sub" id="expMsg">コピーして、LINEのKeepやメモ、メールなどでもう一方の端末に送ってください。</p></div>
+    <div class="lab" style="margin-top:12px">読み込む（いまの記録は置き換わります）</div>
+    <textarea id="impText" placeholder="書き出した記録を貼り付け"></textarea>
+    <div class="btns"><label class="btn ghost filebtn">ファイルを選ぶ<input type="file" id="impFile" accept=".json,application/json,text/plain" hidden></label><button class="btn" id="impBtn">${impArm ? 'もう一度押すと置き換えます' : '読み込む'}</button></div>
+    <p class="sub" id="impMsg"></p></div>
+    <h2>データ</h2><div class="card"><p class="sub">記録はこの端末のこのアプリの中だけにあります。</p>
     <div class="btns"><button class="btn ghost" id="resetAll">${resetArm ? 'もう一度押すとすべて消えます' : 'すべての記録を消す'}</button></div></div>`;
   $('#v-record').innerHTML = h;
 }
@@ -276,7 +287,51 @@ $('#v-record').addEventListener('click', e => {
     resetArm = false; store = {}; save(); renderRecord();
   }
 });
-$('#v-record').addEventListener('change', e => { if (e.target.id === 'examDate') { conf().date = e.target.value; save(); } });
+$('#v-record').addEventListener('change', e => {
+  if (e.target.id === 'examDate') { conf().date = e.target.value; save(); }
+  if (e.target.id === 'impFile' && e.target.files[0]) {
+    const r = new FileReader();
+    r.onload = () => { $('#impText').value = r.result; $('#impMsg').textContent = 'ファイルを読み込みました。「読み込む」を押してください。'; };
+    r.readAsText(e.target.files[0]);
+  }
+});
+
+/* ---------- 記録の書き出し・読み込み ---------- */
+let impArm = false;
+const EXPORT_TAG = 'apB-record';
+function exportText() { return JSON.stringify({ app: EXPORT_TAG, v: 1, at: new Date().toISOString(), data: store }); }
+function parseImport(text) {
+  let o; try { o = JSON.parse(text.trim()); } catch (e) { return null; }
+  if (!o || o.app !== EXPORT_TAG || typeof o.data !== 'object' || Array.isArray(o.data)) return null;
+  return o;
+}
+function recordSummary(d) {
+  const probs = Object.keys(d).filter(k => !k.startsWith('_') && d[k] && d[k].graded).length;
+  const past = Object.values(d._past || {}).reduce((a, x) => a + Object.keys(x).length, 0);
+  return `採点済みの問題 ${probs} 題・過去問の記録 ${past} 件・覚えたカード ${Object.keys(d._cards || {}).length} 枚`;
+}
+$('#v-record').addEventListener('click', e => {
+  const id = e.target.id;
+  if (id === 'expBtn') { $('#expArea').classList.remove('hidden'); $('#expText').value = exportText(); $('#expMsg').textContent = recordSummary(store) + '。コピーして、もう一方の端末に送ってください。'; return; }
+  if (id === 'expCopy') {
+    const t = $('#expText'); t.select();
+    (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).then(() => { $('#expMsg').textContent = 'コピーしました。'; },
+      () => { try { document.execCommand('copy'); $('#expMsg').textContent = 'コピーしました。'; } catch (err) { $('#expMsg').textContent = '選択した文字を長押ししてコピーしてください。'; } });
+    return;
+  }
+  if (id === 'expFile') {
+    const d = new Date(), name = `apB-record-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}.json`;
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([$('#expText').value], { type: 'application/json' })); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); $('#expMsg').textContent = `${name} を保存しました（保存できない環境では「コピー」を使ってください）。`;
+    return;
+  }
+  if (id === 'impBtn') {
+    const o = parseImport($('#impText').value);
+    if (!o) { $('#impMsg').textContent = 'このアプリで書き出した記録ではないようです。全部をそのまま貼り付けてください。'; impArm = false; return; }
+    if (!impArm) { impArm = true; e.target.textContent = 'もう一度押すと置き換えます'; $('#impMsg').textContent = `読み込む記録：${recordSummary(o.data)}。いまの記録（${recordSummary(store)}）は置き換わります。`; return; }
+    impArm = false; store = o.data; save(); renderRecord(); $('#impMsg').textContent = '読み込みました。'; return;
+  }
+});
 
 /* ---------- 問題を開く ---------- */
 function open(id) {
@@ -298,12 +353,17 @@ function updTimer() {
   const s = Math.floor((Date.now() - t0) / 1000);
   $('#timer').textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')} / 目安${cur.min}分`;
 }
+// 幅の広い画面（PCなど）では、左に問題、右に解答用紙か解説を並べる
+const WIDE = window.matchMedia('(min-width: 1000px)');
 function setTab(t) {
+  const wide = WIDE.matches;
+  if (wide && t === 'q') t = tab === 'e' ? 'e' : 's';
   tab = t;
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.t === t));
-  ['q', 's', 'e'].forEach(k => $('#pane-' + k).classList.toggle('hidden', k !== t));
-  window.scrollTo(0, 0);
+  ['q', 's', 'e'].forEach(k => $('#pane-' + k).classList.toggle('hidden', !(k === t || (wide && k === 'q'))));
+  if (wide) { $('#pane-' + t).scrollTop = 0; } else window.scrollTo(0, 0);
 }
+WIDE.addEventListener('change', () => { if (cur) setTab(tab === 'e' ? 'e' : WIDE.matches ? 's' : 'q'); });
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.t)));
 $('#backBtn').addEventListener('click', () => {
   const back = store._exam && cur && store._exam.ids.includes(cur.id) ? 'mock' : (VIEWS.includes(lastView) ? lastView : 'practice');
@@ -319,7 +379,7 @@ function renderQ() {
     return it ? groupHtml(it, it.g || `〔${k}〕の解答群`) : '';
   });
   $('#pane-q').innerHTML = `<p class="sub">${fieldTag(cur.f)}${cur.level === 'full' ? '<span class="tag full">本番レベル</span>' : ''}目安${cur.min}分</p>` + body +
-    `<div class="btns"><button class="btn" onclick="setTab('s')">解答用紙へ</button></div>`;
+    `<div class="btns to-sheet"><button class="btn" onclick="setTab('s')">解答用紙へ</button></div>`;
 }
 
 /* ---------- 解答用紙（全問題で共通の形式） ---------- */
